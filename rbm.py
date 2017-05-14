@@ -1,4 +1,8 @@
 import tensorflow as tf
+import numpy as np
+
+def outer(x, y):
+    return x[:, :, np.newaxis] * y[:, np.newaxis, :]
 
 class RBM(object):
     def __init__(self, num_visble, num_hidden):
@@ -12,6 +16,8 @@ class RBM(object):
     def create_placeholder(self):
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, self.num_visble],
                                     name="input")
+        self.mask = tf.placeholder(dtype=tf.float32, shape=[None, self.num_visble],
+                                    name="mask")
     
     def add_model(self):
         with tf.variable_scope("model"):
@@ -52,17 +58,24 @@ class RBM(object):
         h2, h2a = self.sample_hidden(v2)
         return [v1, h1, v2, v2a, h2, h2a]
 
-    def gradient(self, v1, h1, v2, h2a):
-        gw = tf.matmul(tf.transpose(v1), h1) - tf.matmul(tf.transpose(v2), h2a)
-        gbv = tf.reduce_mean(v1 - v2, 0) 
-        gbh = tf.reduce_mean(h1 - h2a, 0)
+    def gradient(self, v1, h1, v2, h2a, masks):
+        
+        #gw = tf.matmul(tf.transpose(v1), h1) - tf.matmul(tf.transpose(v2), h2a)
+        #gbv = tf.reduce_mean(v1 - v2, 0) 
+        #gbh = tf.reduce_mean(h1 - h2a, 0)
+        v1h1_mask = outer(masks, h1)
+
+        gw = tf.reduce_mean((outer(v1, h1) * v1h1_mask) -(outer(v2, h2a) * v1h1_mask), 0)
+        gbv = tf.reduce_mean((v1 * masks) - (v2 * masks), 0)
+        gbh = tf.reduce_min(h1 - h2a, 0)
         return [gw, gbv, gbh]
     
-    def train(self, vis,  w_lr=0.021, v_lr=0.025,
-                h_lr=0.025, decay=0.0000, momentum=0.9):
+    def train(self, vis,  w_lr=0.001, v_lr=0.001,
+                h_lr=0.001, decay=0.0000, T=1,momentum=0.9):
         v1, h1, v2, v2a, h2, h2a = self.contrastive_divergence(vis)
-        
-        gw, gbv, gbh = self.gradient(v1, h1, v2, h2a)
+        for _ in range(T-1):
+            v1, h1, v2, v2a, h2, h2a = self.contrastive_divergence(v2)
+        gw, gbv, gbh = self.gradient(v1, h1, v2, h2a, self.mask)
         update_w = tf.assign(self.weights, 
                              self.weights + momentum * self.prev_gw + w_lr * gw)
         update_bh = tf.assign(self.hbias,

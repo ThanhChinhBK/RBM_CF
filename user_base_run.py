@@ -25,6 +25,7 @@ if __name__ == "__main__":
     all_users, all_movies, tests = load_dataset(FLAGS.train_path, FLAGS.test_path,
                                                 FLAGS.sep, user_based=True)
     rbm = RBM(len(all_movies) * 5, FLAGS.num_hidden)
+    print("model created")
     init = tf.global_variables_initializer()
     sess = tf.Session()
     sess.run(init)
@@ -35,28 +36,36 @@ if __name__ == "__main__":
             profiles[uid].append((mid, float(rat)))
     print("Users and ratings loaded")
     for e in range(FLAGS.epochs):
+        
         for batch_i, batch in enumerate(chunker(list(profiles.keys()),
                                                 FLAGS.batch_size)):
             size = min(len(batch), FLAGS.batch_size)
             
             # create needed binary vectors
             bin_profiles = {}
-        
+            masks = {}
             for userid in batch:
                 user_profile = [0.] * len(all_movies)
+                mask = [0] * (len(all_movies) * 5)
                 for movie_id, rat in profiles[userid]:
                     user_profile[all_movies.index(movie_id)] = rat
+                    for _i in range(5):
+                        mask[5 * all_movies.index(movie_id) + _i] = 1
                 example = expand(np.array([user_profile])).astype('float32')
                 bin_profiles[userid] = example
-                positions = {profile_id: pos for pos, profile_id
-                             in enumerate(batch)}
+                masks[userid] = mask
+
             profile_batch = [bin_profiles[el] for el in batch]
+            masks_batch = np.array([masks[id] for id in batch])
             train_batch = np.array(profile_batch).reshape(size,
                                                           len(all_movies * 5))
-            _  = sess.run([rbm.optimizer], feed_dict={rbm.input: train_batch})
+            train_masks = np.array(masks_batch).reshape(size,
+                                                        len(all_movies) * 5)
+            _  = sess.run([rbm.optimizer], feed_dict={rbm.input: train_batch, rbm.mask : masks_batch})
             sys.stdout.write('.')
             sys.stdout.flush()
-            
+        
+        # test step
         ratings = []
         predictions = []
         for batch in chunker(list(tests.keys()), FLAGS.batch_size):
@@ -64,13 +73,17 @@ if __name__ == "__main__":
 
             # create needed binary vectors
             bin_profiles = {}
+            masks = {}
             for userid in batch:
                 user_profile = [0.] * len(all_movies)
+                mask = [0] * (len(all_movies) * 5)
                 for movie_id, rat in profiles[userid]:
                     user_profile[all_movies.index(movie_id)] = rat
+                    for _i in range(5):
+                        mask[5 * all_movies.index(movie_id) + _i] = 1
                 example = expand(np.array([user_profile])).astype('float32')
                 bin_profiles[userid] = example
-             
+                masks[userid] = mask
 
             positions = {profile_id: pos for pos, profile_id
                          in enumerate(batch)}
