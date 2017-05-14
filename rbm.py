@@ -33,13 +33,13 @@ class RBM(object):
         h1_sample = tf.sign(activations - tf.random_uniform(tf.shape(activations)))
         return activations, h1_sample
 
-    def sample_visible(self, hid, k=10):
+    def sample_visible(self, hid, k=5):
         activations = tf.nn.sigmoid(tf.matmul(hid, tf.transpose(self.weights)) + self.vbias)
         k_ones = tf.ones((1,k))
-        partition = \
-            tf.matmul(tf.reshape(tf.reduce_sum(tf.reshape(activations, (-1, k)), 1),
-                                 (-1, 1)) , k_ones)
-       
+        partition = tf.expand_dims(tf.reduce_sum(tf.reshape(activations, (-1, self.num_visble // k, k)), 2), -1)
+        #part = [tf.squeeze(x,[1]) for x in tf.split(1, self.num_visble // k, partition)]
+        #print(part[0].get_shape())
+        partition = partition * k_ones
         activations = activations / tf.reshape(partition , tf.shape(activations))
         v1_sample = tf.sign(activations - tf.random_uniform(tf.shape(activations)))
        
@@ -48,9 +48,9 @@ class RBM(object):
     def contrastive_divergence(self, v1):
         h1, _ = self.sample_hidden(v1)
         v2, v2a = self.sample_visible(h1)
+        self.predict = v2a
         h2, h2a = self.sample_hidden(v2)
-
-        return (v1, h1, v2, v2a, h2, h2a)
+        return [v1, h1, v2, v2a, h2, h2a]
 
     def gradient(self, v1, h1, v2, h2a):
         gw = tf.matmul(tf.transpose(v1), h1) - tf.matmul(tf.transpose(v2), h2a)
@@ -58,10 +58,10 @@ class RBM(object):
         gbh = tf.reduce_mean(h1 - h2a, 0)
         return [gw, gbv, gbh]
     
-    def train(self, vis,  w_lr=0.000021, v_lr=0.000025,
-                h_lr=0.000025, decay=0.0000, momentum=0.0):
+    def train(self, vis,  w_lr=0.021, v_lr=0.025,
+                h_lr=0.025, decay=0.0000, momentum=0.9):
         v1, h1, v2, v2a, h2, h2a = self.contrastive_divergence(vis)
-        self.predict = v2a
+        
         gw, gbv, gbh = self.gradient(v1, h1, v2, h2a)
         update_w = tf.assign(self.weights, 
                              self.weights + momentum * self.prev_gw + w_lr * gw)
@@ -69,7 +69,6 @@ class RBM(object):
                               self.hbias + momentum * self.prev_gbh + h_lr * gbh)
         update_bv = tf.assign(self.vbias,
                               self.vbias + momentum * self.prev_gbv + v_lr * gbv)
-        print(gbv.get_shape(), self.prev_gbv.get_shape())
         update_prev_gw = tf.assign(self.prev_gw, gw)
         update_prev_gbh = tf.assign(self.prev_gbh, gbh)
         update_prev_gbv = tf.assign(self.prev_gbv, gbv)
