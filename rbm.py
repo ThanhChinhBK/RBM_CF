@@ -36,8 +36,8 @@ class RBM(object):
 
     def sample_hidden(self, vis):
         activations = tf.nn.sigmoid(tf.matmul(vis, self.weights) + self.hbias)
-        h1_sample = tf.sign(activations - tf.random_uniform(tf.shape(activations)))
-        return activations, h1_sample
+        h1_sample = tf.nn.relu(tf.sign(activations - tf.random_uniform(tf.shape(activations))))
+        return h1_sample, activations
 
     def sample_visible(self, hid, k=5):
         activations = tf.nn.sigmoid(tf.matmul(hid, tf.transpose(self.weights)) + self.vbias)
@@ -47,16 +47,16 @@ class RBM(object):
         #print(part[0].get_shape())
         partition = partition * k_ones
         activations = activations / tf.reshape(partition , tf.shape(activations))
-        v1_sample = tf.sign(activations - tf.random_uniform(tf.shape(activations)))
+        v1_sample = tf.nn.relu(tf.sign(activations - tf.random_uniform(tf.shape(activations))))
        
-        return activations, v1_sample
+        return v1_sample, activations
 
     def contrastive_divergence(self, v1):
-        h1, _ = self.sample_hidden(v1)
+        h1, h1a = self.sample_hidden(v1)
         v2, v2a = self.sample_visible(h1)
         self.predict = v2a
         h2, h2a = self.sample_hidden(v2)
-        return [v1, h1, v2, v2a, h2, h2a]
+        return [v1, h1, h1a,  v2, v2a, h2, h2a]
 
     def gradient(self, v1, h1, v2, h2a, masks):
         
@@ -64,18 +64,19 @@ class RBM(object):
         #gbv = tf.reduce_mean(v1 - v2, 0) 
         #gbh = tf.reduce_mean(h1 - h2a, 0)
         v1h1_mask = outer(masks, h1)
-
-        gw = tf.reduce_mean((outer(v1, h1) * v1h1_mask) -(outer(v2, h2a) * v1h1_mask), 0)
-        gbv = tf.reduce_mean((v1 * masks) - (v2 * masks), 0)
-        gbh = tf.reduce_min(h1 - h2a, 0)
+        gw = tf.reduce_mean(outer(v1, h1) * v1h1_mask - outer(v2, h2a) * v1h1_mask,axis= 0)
+        gbv = tf.reduce_mean((v1 * masks) - (v2 * masks),axis= 0)
+        gbh = tf.reduce_mean(h1 - h2a, axis = 0)
         return [gw, gbv, gbh]
     
     def train(self, vis,  w_lr=0.001, v_lr=0.001,
                 h_lr=0.001, decay=0.0000, T=1,momentum=0.9):
-        v1, h1, v2, v2a, h2, h2a = self.contrastive_divergence(vis)
+        v1, h1, h1a, v2, v2a, h2, h2a = self.contrastive_divergence(vis)
         for _ in range(T-1):
-            v1, h1, v2, v2a, h2, h2a = self.contrastive_divergence(v2)
-        gw, gbv, gbh = self.gradient(v1, h1, v2, h2a, self.mask)
+            v1, h1, h1a, v2, v2a, h2, h2a = self.contrastive_divergence(v2)
+        gw, gbv, gbh = self.gradient(v1, h1a, v2a, h2a, self.mask)
+        if decay:
+            gw -= decay * self.weights
         update_w = tf.assign(self.weights, 
                              self.weights + momentum * self.prev_gw + w_lr * gw)
         update_bh = tf.assign(self.hbias,
@@ -89,8 +90,5 @@ class RBM(object):
                      update_prev_gbh, update_prev_gbv)
         return optimizer
 
-if __name__ == "__main__":
-    # for test model
-    RBM(300000, 100)
 
 
