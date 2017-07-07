@@ -45,7 +45,7 @@ if __name__ == "__main__":
             bin_profiles = {}
             masks = {}
             for userid in batch:
-                user_profile = [0.] * len(all_movies)
+                user_profile = np.array([0.] * len(all_movies))
                 mask = [0] * (len(all_movies) * 5)
                 for movie_id, rat in profiles[userid]:
                     user_profile[all_movies.index(movie_id)] = rat
@@ -56,7 +56,7 @@ if __name__ == "__main__":
                 masks[userid] = mask
 
             profile_batch = [bin_profiles[el] for el in batch]
-            masks_batch = np.array([masks[id] for id in batch])
+            masks_batch = [masks[id] for id in batch]
             train_batch = np.array(profile_batch).reshape(size,
                                                           len(all_movies * 5))
             train_masks = np.array(masks_batch).reshape(size,
